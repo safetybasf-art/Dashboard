@@ -471,9 +471,16 @@
 
     <div class="main-content">
         <div id="dashboard" class="page active">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;">
+            <div
+                style="display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;flex-wrap:wrap;gap:15px;">
                 <h2>วิเคราะห์ข้อมูลความปลอดภัย</h2>
-                <span class="realtime-indicator"><span class="dot"></span> Realtime</span>
+                <div style="display:flex;align-items:center;gap:15px;">
+                    <select id="dashEventFilter" onchange="updateDashboard()"
+                        style="padding:10px 15px;border:1px solid #e2e8f0;border-radius:8px;min-width:180px;">
+                        <option value="all">ทุกเหตุการณ์</option>
+                    </select>
+                    <span class="realtime-indicator"><span class="dot"></span> Realtime</span>
+                </div>
             </div>
             <div class="stats-grid">
                 <div class="stat-card" style="border-top:5px solid var(--accent);">
@@ -508,6 +515,9 @@
         <div id="activity" class="page">
             <h2 style="margin-bottom:20px;">รายการตอบกลับล่าสุด</h2>
             <div class="filter-bar">
+                <select id="actEventFilter" onchange="renderActivity()">
+                    <option value="all">ทุกเหตุการณ์</option>
+                </select>
                 <select id="actStatusFilter" onchange="renderActivity()">
                     <option value="all">ทุกสถานะ</option>
                     <option value="Accept">ปลอดภัย</option>
@@ -598,7 +608,7 @@
             messagingSenderId: "271895777393",
             appId: "1:271895777393:web:d5789d0ead84ebb8818bd0",
             measurementId: "G-7YC5MEEPH5"
-  };
+        };
 
         const app = initializeApp(firebaseConfig);
         const database = getDatabase(app);
@@ -677,11 +687,32 @@
         }
 
         // ==================== Dashboard ====================
-        function updateDashboard() {
-            const a = rawData.filter(d => d.Reply === 'Accept').length;
-            const h = rawData.filter(d => d.Reply === 'Help').length;
-            const w = rawData.filter(d => d.Reply === 'Wait').length;
-            document.getElementById('total-val').innerText = rawData.length;
+        window.updateDashboard = function () {
+            // Populate event dropdown
+            const dashEventSelect = document.getElementById('dashEventFilter');
+            const allEvents = [...new Set(rawData.map(d => d.Event).filter(Boolean))];
+            const existingDashOptions = Array.from(dashEventSelect.options).map(o => o.value);
+
+            allEvents.forEach(event => {
+                if (!existingDashOptions.includes(event)) {
+                    const opt = document.createElement('option');
+                    opt.value = event;
+                    opt.textContent = event;
+                    dashEventSelect.appendChild(opt);
+                }
+            });
+
+            // Get selected event filter
+            const selectedEvent = dashEventSelect.value;
+            const filteredData = selectedEvent === 'all'
+                ? rawData
+                : rawData.filter(d => d.Event === selectedEvent);
+
+            // Calculate stats from filtered data
+            const a = filteredData.filter(d => d.Reply === 'Accept').length;
+            const h = filteredData.filter(d => d.Reply === 'Help').length;
+            const w = filteredData.filter(d => d.Reply === 'Wait').length;
+            document.getElementById('total-val').innerText = filteredData.length;
             document.getElementById('accept-val').innerText = a;
             document.getElementById('help-val').innerText = h;
             document.getElementById('wait-val').innerText = w;
@@ -693,16 +724,17 @@
                 options: { responsive: true, maintainAspectRatio: false, cutout: '70%' }
             });
 
-            const events = [...new Set(rawData.map(d => d.Event))].filter(Boolean);
+            // Bar chart shows filtered events or single event
+            const chartEvents = selectedEvent === 'all' ? allEvents : [selectedEvent];
             if (barChart) barChart.destroy();
             barChart = new Chart(document.getElementById('barChart'), {
                 type: 'bar',
                 data: {
-                    labels: events,
+                    labels: chartEvents,
                     datasets: [
-                        { label: 'ปลอดภัย', data: events.map(e => rawData.filter(d => d.Event === e && d.Reply === 'Accept').length), backgroundColor: '#10b981' },
-                        { label: 'ช่วยเหลือ', data: events.map(e => rawData.filter(d => d.Event === e && d.Reply === 'Help').length), backgroundColor: '#ef4444' },
-                        { label: 'รอตอบกลับ', data: events.map(e => rawData.filter(d => d.Event === e && d.Reply === 'Wait').length), backgroundColor: '#f59e0b' }
+                        { label: 'ปลอดภัย', data: chartEvents.map(e => rawData.filter(d => d.Event === e && d.Reply === 'Accept').length), backgroundColor: '#10b981' },
+                        { label: 'ช่วยเหลือ', data: chartEvents.map(e => rawData.filter(d => d.Event === e && d.Reply === 'Help').length), backgroundColor: '#ef4444' },
+                        { label: 'รอตอบกลับ', data: chartEvents.map(e => rawData.filter(d => d.Event === e && d.Reply === 'Wait').length), backgroundColor: '#f59e0b' }
                     ]
                 },
                 options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
@@ -711,9 +743,32 @@
 
         // ==================== Activity ====================
         window.renderActivity = function () {
+            const ev = document.getElementById('actEventFilter').value;
             const st = document.getElementById('actStatusFilter').value;
             const s = document.getElementById('searchAct').value.toLowerCase();
-            const f = rawData.filter(d => (st === 'all' || d.Reply === st) && (d['รายชื่อพนักงาน'] || '').toLowerCase().includes(s));
+
+            // Populate event dropdown (only once or when data changes)
+            const eventSelect = document.getElementById('actEventFilter');
+            const currentEvents = [...new Set(rawData.map(d => d.Event).filter(Boolean))];
+            const existingOptions = Array.from(eventSelect.options).map(o => o.value);
+
+            // Add new events that don't exist
+            currentEvents.forEach(event => {
+                if (!existingOptions.includes(event)) {
+                    const opt = document.createElement('option');
+                    opt.value = event;
+                    opt.textContent = event;
+                    eventSelect.appendChild(opt);
+                }
+            });
+
+            // Filter data
+            const f = rawData.filter(d =>
+                (ev === 'all' || d.Event === ev) &&
+                (st === 'all' || d.Reply === st) &&
+                (d['รายชื่อพนักงาน'] || '').toLowerCase().includes(s)
+            );
+
             document.getElementById('activityTableBody').innerHTML = f.map(i => `
                 <tr>
                     <td><b>${i['รายชื่อพนักงาน'] || '-'}</b><br><small>${i.Event || '-'}</small></td>
